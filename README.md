@@ -1,4 +1,4 @@
-# Riding Page
+# cycling Page
 
 > "This project is forked from [https://github.com/yihong0618/running_page/tree/master] under MIT license."
 

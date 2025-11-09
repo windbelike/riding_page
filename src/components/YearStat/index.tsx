@@ -62,12 +62,12 @@ const YearStat = ({
     <div className="cursor-pointer" onClick={() => onClick(year)}>
       <section {...eventHandlers}>
         <Stat value={year} description=" Journey" />
-        <Stat value={runs.length} description=" Runs" />
+        <Stat value={runs.length} description=" Rides" />
         <Stat value={sumDistance} description=" KM" />
         {SHOW_ELEVATION_GAIN && (
           <Stat value={sumElevationGainStr} description=" Elevation Gain" />
         )}
-        <Stat value={avgPace} description=" Avg Pace" />
+        <Stat value={avgPace} description=" Avg Speed" />
         <Stat value={`${streak} day`} description=" Streak" />
         {hasHeartRate && (
           <Stat value={avgHeartRate} description=" Avg Heart Rate" />

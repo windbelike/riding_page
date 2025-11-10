@@ -1,4 +1,3 @@
-import MapboxLanguage from '@mapbox/mapbox-gl-language';
 import React, {
   useRef,
   useCallback,
@@ -6,46 +5,33 @@ import React, {
   useEffect,
   useMemo,
 } from 'react';
-import Map, {
-  Layer,
-  Source,
-  FullscreenControl,
-  NavigationControl,
-  MapRef,
-} from 'react-map-gl';
-import { MapInstance } from 'react-map-gl/src/types/lib';
+import { MapContainer, TileLayer, Polyline, GeoJSON, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import './leaflet.css';
+
 import useActivities from '@/hooks/useActivities';
 import {
   IS_CHINESE,
-  ROAD_LABEL_DISPLAY,
-  MAPBOX_TOKEN,
-  PROVINCE_FILL_COLOR,
-  COUNTRY_FILL_COLOR,
   USE_DASH_LINE,
   LINE_OPACITY,
   MAP_HEIGHT,
   PRIVACY_MODE,
-  LIGHTS_ON,
-  MAP_TILE_VENDOR,
-  MAP_TILE_ACCESS_TOKEN,
-  getRuntimeSingleRunColor,
+  PROVINCE_FILL_COLOR,
+  COUNTRY_FILL_COLOR,
 } from '@/utils/const';
 import {
   Coordinate,
   IViewState,
   geoJsonForMap,
-  getMapStyle,
-  isTouchDevice,
 } from '@/utils/utils';
 import { RouteAnimator } from '@/utils/routeAnimation';
-import RunMarker from './RunMarker';
+import LeafletRunMarker from './LeafletRunMarker';
 import RunMapButtons from './RunMapButtons';
 import styles from './style.module.css';
 import { FeatureCollection } from 'geojson';
 import { RPGeometry } from '@/static/run_countries';
-import './mapbox.css';
 import LightsControl from '@/components/RunMap/LightsControl';
-import { useMapTheme, useThemeChangeCounter } from '@/hooks/useTheme';
 
 interface IRunMapProps {
   title: string;
@@ -54,8 +40,58 @@ interface IRunMapProps {
   changeYear: (_year: string) => void;
   geoData: FeatureCollection<RPGeometry>;
   thisYear: string;
-  animationTrigger?: number; // Optional trigger to force animation replay
+  animationTrigger?: number;
 }
+
+// Component to handle map view updates (optimized for performance)
+const MapViewController = ({ 
+  viewState, 
+  setViewState 
+}: { 
+  viewState: IViewState;
+  setViewState: (_viewState: IViewState) => void;
+}) => {
+  const map = useMap();
+  const isInitialMount = useRef(true);
+
+  useEffect(() => {
+    if (isInitialMount.current && viewState.latitude && viewState.longitude && viewState.zoom) {
+      map.setView([viewState.latitude, viewState.longitude], viewState.zoom, {
+        animate: false, // No animation on initial mount for better performance
+      });
+      isInitialMount.current = false;
+    }
+  }, [viewState.latitude, viewState.longitude, viewState.zoom, map]);
+
+  // Handle map move events with debouncing for better performance
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
+    const handleMoveEnd = () => {
+      // Debounce the state update to reduce re-renders
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        const center = map.getCenter();
+        const zoom = map.getZoom();
+        setViewState({
+          latitude: center.lat,
+          longitude: center.lng,
+          zoom: zoom,
+        });
+      }, 100);
+    };
+
+    map.on('moveend', handleMoveEnd);
+    return () => {
+      clearTimeout(timeoutId);
+      map.off('moveend', handleMoveEnd);
+    };
+  }, [map, setViewState]);
+
+  return null;
+};
+
+// MapThemeController removed - map now uses fixed style regardless of theme
 
 const RunMap = ({
   title,
@@ -67,156 +103,39 @@ const RunMap = ({
   animationTrigger,
 }: IRunMapProps) => {
   const { countries, provinces } = useActivities();
-  const mapRef = useRef<MapRef>(null);
-  const [lights, setLights] = useState(PRIVACY_MODE ? false : LIGHTS_ON);
-  // layers that should remain visible when lights are off
-  const keepWhenLightsOff = ['runs2', 'animated-run'];
+  const mapRef = useRef<L.Map | null>(null);
+  // Change default to true for better visibility
+  const [lights, setLights] = useState(PRIVACY_MODE ? false : true);
   const [mapGeoData, setMapGeoData] =
     useState<FeatureCollection<RPGeometry> | null>(null);
   const [isLoadingMapData, setIsLoadingMapData] = useState(false);
 
-  // Use the map theme hook to get the current map theme
-  const currentMapTheme = useMapTheme();
-  // Listen for theme changes to update single run color
-  const themeChangeCounter = useThemeChangeCounter();
+  // Use fixed single run color (not affected by theme)
+  const singleRunColor = '#52c41a'; // Fixed green color
 
-  // Get theme-aware single run color that updates when theme changes
-  const singleRunColor = useMemo(
-    () => getRuntimeSingleRunColor(),
-    [themeChangeCounter]
-  );
+  // Use fixed tile URL - always show standard light map, not affected by theme
+  const tileUrl = useMemo(() => {
+    // Always use standard Voyager style - clean and professional
+    return 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  }, []);
 
-  // Generate map style based on current theme
-  const mapStyle = useMemo(
-    () => getMapStyle(MAP_TILE_VENDOR, currentMapTheme, MAP_TILE_ACCESS_TOKEN),
-    [currentMapTheme]
-  );
-
-  // Update map when theme changes
-  useEffect(() => {
-    if (mapRef.current) {
-      const map = mapRef.current.getMap();
-
-      // Save current map state before changing style
-      const currentCenter = map.getCenter();
-      const currentZoom = map.getZoom();
-      const currentBearing = map.getBearing();
-      const currentPitch = map.getPitch();
-
-      // Apply new style
-      map.setStyle(mapStyle);
-
-      // Create a stable handler for style.load to ensure proper cleanup
-      const handleStyleLoad = () => {
-        // Add a small delay to ensure style is fully loaded
-        setTimeout(() => {
-          try {
-            // Restore map view state
-            map.setCenter(currentCenter);
-            map.setZoom(currentZoom);
-            map.setBearing(currentBearing);
-            map.setPitch(currentPitch);
-
-            // Reapply layer visibility settings with current lights state
-            switchLayerVisibility(map, lights);
-          } catch (error) {
-            console.warn('Error applying map style changes:', error);
-          }
-        }, 100);
-      };
-
-      // Use once to automatically remove the listener after it fires
-      map.once('style.load', handleStyleLoad);
-    }
-  }, [mapStyle]); // Keep only mapStyle in dependency to prevent excessive re-renders
+  const tileAttribution = useMemo(() => {
+    return '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  }, []);
 
   // animation state (single run only)
   const [animatedPoints, setAnimatedPoints] = useState<Coordinate[]>([]);
   const routeAnimatorRef = useRef<RouteAnimator | null>(null);
   const lastRouteKeyRef = useRef<string | null>(null);
 
-  // Memoize filter arrays to prevent recreating them on every render
+  // Memoize filter arrays
   const filterProvinces = useMemo(() => {
-    const filtered = provinces.slice();
-    filtered.unshift('in', 'name');
-    return filtered;
+    return provinces;
   }, [provinces]);
 
   const filterCountries = useMemo(() => {
-    const filtered = countries.slice();
-    filtered.unshift('in', 'name');
-    return filtered;
+    return countries;
   }, [countries]);
-
-  /**
-   * Toggle visibility of map layers based on lights setting
-   * @param map - The Mapbox map instance
-   * @param lights - Whether lights are on or off
-   */
-  function switchLayerVisibility(map: MapInstance, lights: boolean) {
-    const styleJson = map.getStyle();
-    styleJson.layers.forEach((it: { id: string }) => {
-      if (!keepWhenLightsOff.includes(it.id)) {
-        if (lights) map.setLayoutProperty(it.id, 'visibility', 'visible');
-        else map.setLayoutProperty(it.id, 'visibility', 'none');
-      }
-    });
-  }
-
-  // Apply layer visibility when lights setting changes
-  useEffect(() => {
-    if (mapRef.current) {
-      const map = mapRef.current.getMap();
-      // Add a small delay to ensure map is ready
-      setTimeout(() => {
-        try {
-          switchLayerVisibility(map, lights);
-        } catch (error) {
-          console.warn('Error switching layer visibility:', error);
-        }
-      }, 50);
-    }
-  }, [lights]);
-
-  const mapRefCallback = useCallback(
-    (ref: MapRef) => {
-      if (ref !== null) {
-        const map = ref.getMap();
-        if (map && IS_CHINESE) {
-          map.addControl(new MapboxLanguage({ defaultLanguage: 'zh-Hans' }));
-        }
-        // all style resources have been downloaded
-        // and the first visually complete rendering of the base style has occurred.
-        // it's odd. when use style other than mapbox, the style.load event is not triggered.Add commentMore actions
-        // so I use data event instead of style.load event and make sure we handle it only once.
-        map.on('data', (event) => {
-          if (event.dataType !== 'style' || mapRef.current) {
-            return;
-          }
-          if (!ROAD_LABEL_DISPLAY) {
-            const layers = map.getStyle().layers;
-            const labelLayerNames = layers
-              .filter(
-                (layer: any) =>
-                  (layer.type === 'symbol' || layer.type === 'composite') &&
-                  layer.layout.text_field !== null
-              )
-              .map((layer: any) => layer.id);
-            labelLayerNames.forEach((layerId) => {
-              map.removeLayer(layerId);
-            });
-          }
-          mapRef.current = ref;
-          switchLayerVisibility(map, lights);
-        });
-      }
-      if (mapRef.current) {
-        const map = mapRef.current.getMap();
-        switchLayerVisibility(map, lights);
-      }
-    },
-    [mapRef, lights]
-  );
 
   const initGeoDataLength = geoData.features.length;
   const isBigMap = (viewState.zoom ?? 0) <= 3;
@@ -237,7 +156,6 @@ const RunMap = ({
 
   let combinedGeoData = geoData;
   if (isBigMap && IS_CHINESE && mapGeoData) {
-    // Show boundary and line together, combine geoData(only when not combine yet)
     if (geoData.features.length === initGeoDataLength) {
       combinedGeoData = {
         type: 'FeatureCollection',
@@ -246,7 +164,7 @@ const RunMap = ({
     }
   }
 
-  // Memoize expensive calculations
+  // Detect single run
   const { isSingleRun, startLon, startLat, endLon, endLat } = useMemo(() => {
     const isSingle =
       geoData.features.length === 1 &&
@@ -266,60 +184,31 @@ const RunMap = ({
     return { isSingleRun: isSingle, startLon, startLat, endLon, endLat };
   }, [geoData]);
 
-  const dash = useMemo(() => {
-    return USE_DASH_LINE && !isSingleRun && !isBigMap ? [2, 2] : [2, 0];
+  // Dash array for lines
+  const dashArray = useMemo(() => {
+    return USE_DASH_LINE && !isSingleRun && !isBigMap ? '5, 10' : undefined;
   }, [isSingleRun, isBigMap]);
-
-  const onMove = useCallback(
-    ({ viewState }: { viewState: IViewState }) => {
-      setViewState(viewState);
-    },
-    [setViewState]
-  );
 
   const style: React.CSSProperties = useMemo(
     () => ({
       width: '100%',
       height: MAP_HEIGHT,
-      maxWidth: '100%', // Prevent overflow on mobile
+      maxWidth: '100%',
+      position: 'relative',
     }),
     []
   );
 
-  const fullscreenButton: React.CSSProperties = useMemo(
-    () => ({
-      position: 'absolute',
-      marginTop: '29.2px',
-      right: '0px',
-      opacity: 0.3,
-    }),
-    []
-  );
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      if (mapRef.current) {
-        mapRef.current.getMap().resize();
-      }
-    };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    };
-  }, []);
-
-  // start route animation using RouteAnimator
+  // Route animation
   const startRouteAnimation = useCallback(() => {
     if (!isSingleRun) return;
     const points = geoData.features[0].geometry.coordinates as Coordinate[];
     if (!points || points.length < 2) return;
 
-    // Stop any existing animation
     if (routeAnimatorRef.current) {
       routeAnimatorRef.current.stop();
     }
 
-    // Create new animator
     routeAnimatorRef.current = new RouteAnimator(
       points,
       setAnimatedPoints,
@@ -328,11 +217,10 @@ const RunMap = ({
       }
     );
 
-    // Start animation
     routeAnimatorRef.current.start();
   }, [geoData, isSingleRun]);
 
-  // autoplay once when single run changes
+  // Auto-play animation on route change
   useEffect(() => {
     if (!isSingleRun) return;
     const pts = geoData.features[0].geometry.coordinates as Coordinate[];
@@ -341,7 +229,6 @@ const RunMap = ({
       lastRouteKeyRef.current = key;
       startRouteAnimation();
     }
-    // cleanup on unmount
     return () => {
       if (routeAnimatorRef.current) {
         routeAnimatorRef.current.stop();
@@ -349,7 +236,7 @@ const RunMap = ({
     };
   }, [geoData, isSingleRun, startRouteAnimation]);
 
-  // Force animation when animationTrigger changes (for table clicks)
+  // Trigger animation from external source
   useEffect(() => {
     if (animationTrigger && animationTrigger > 0 && isSingleRun) {
       startRouteAnimation();
@@ -361,104 +248,156 @@ const RunMap = ({
     startRouteAnimation();
   }, [isSingleRun, startRouteAnimation]);
 
+  // GeoJSON style function
+  const geoJsonStyle = useCallback((feature: any) => {
+    const name = feature.properties?.name;
+    
+    if (filterProvinces.includes(name)) {
+      return {
+        fillColor: PROVINCE_FILL_COLOR,
+        fillOpacity: 0.5,
+        color: PROVINCE_FILL_COLOR,
+        weight: 1,
+      };
+    }
+    
+    if (filterCountries.includes(name)) {
+      const isChina = name === '中国';
+      return {
+        fillColor: COUNTRY_FILL_COLOR,
+        fillOpacity: isChina ? 0.1 : 0.5,
+        color: COUNTRY_FILL_COLOR,
+        weight: 1,
+      };
+    }
+    
+    return {
+      fillColor: 'transparent',
+      fillOpacity: 0,
+      color: 'transparent',
+      weight: 0,
+    };
+  }, [filterProvinces, filterCountries]);
+
+  // Calculate center and zoom for initial view
+  const initialCenter: [number, number] = useMemo(() => {
+    return [viewState.latitude || 20, viewState.longitude || 20];
+  }, [viewState.latitude, viewState.longitude]);
+
+  const initialZoom = useMemo(() => {
+    return viewState.zoom || 3;
+  }, [viewState.zoom]);
+
   return (
-    <Map
-      {...viewState}
-      onMove={onMove}
-      onClick={handleMapClick}
-      style={style}
-      mapStyle={mapStyle}
-      ref={mapRefCallback}
-      cooperativeGestures={isTouchDevice()}
-      mapboxAccessToken={MAPBOX_TOKEN}
-    >
+    <div style={{ width: '100%' }} id="map-container">
+      {/* Year tabs above the map */}
       <RunMapButtons changeYear={changeYear} thisYear={thisYear} />
-      <Source id="data" type="geojson" data={combinedGeoData}>
-        <Layer
-          id="province"
-          type="fill"
-          paint={{
-            'fill-color': PROVINCE_FILL_COLOR,
+      
+      {/* Map container */}
+      <div style={style}>
+        <MapContainer
+          center={initialCenter}
+          zoom={initialZoom}
+          style={{ width: '100%', height: '100%' }}
+          zoomControl={true}
+          scrollWheelZoom={true}
+          preferCanvas={true}
+          renderer={L.canvas()}
+          zoomAnimation={true}
+          fadeAnimation={true}
+          markerZoomAnimation={true}
+          ref={(mapInstance) => {
+            if (mapInstance) {
+              mapRef.current = mapInstance;
+            }
           }}
-          filter={filterProvinces}
-        />
-        <Layer
-          id="countries"
-          type="fill"
-          paint={{
-            'fill-color': COUNTRY_FILL_COLOR,
-            // in China, fill a bit lighter while already filled provinces
-            'fill-opacity': ['case', ['==', ['get', 'name'], '中国'], 0.1, 0.5],
-          }}
-          filter={filterCountries}
-        />
-        <Layer
-          id="runs2"
-          type="line"
-          paint={{
-            'line-color': ['get', 'color'],
-            'line-width': isBigMap && lights ? 1 : 2,
-            'line-dasharray': dash,
-            'line-opacity':
-              isSingleRun || isBigMap || !lights ? 1 : LINE_OPACITY,
-            'line-blur': 1,
-          }}
-          layout={{
-            'line-join': 'round',
-            'line-cap': 'round',
-          }}
-        />
-      </Source>
-      {isSingleRun && animatedPoints.length > 0 && (
-        <Source
-          id="animated-run"
-          type="geojson"
-          data={{
-            type: 'FeatureCollection',
-            features: [
-              {
-                type: 'Feature',
-                properties: { color: singleRunColor },
-                geometry: {
-                  type: 'LineString',
-                  coordinates: animatedPoints,
-                },
-              },
-            ],
+          whenReady={() => {
+            if (mapRef.current) {
+              // Map is ready
+            }
           }}
         >
-          <Layer
-            id="animated-run"
-            type="line"
-            paint={{
-              'line-color': ['get', 'color'],
-              'line-width': 3,
-              'line-opacity': 1,
-            }}
-            layout={{
-              'line-join': 'round',
-              'line-cap': 'round',
+        <MapViewController viewState={viewState} setViewState={setViewState} />
+        
+        <TileLayer
+          attribution={tileAttribution}
+          url={tileUrl}
+          maxZoom={19}
+          minZoom={3}
+          opacity={1}
+          updateWhenZooming={false}
+          updateWhenIdle={true}
+          keepBuffer={2}
+        />
+
+        {/* Render boundary data (provinces and countries) */}
+        {combinedGeoData && (
+          <GeoJSON
+            data={combinedGeoData as any}
+            style={geoJsonStyle}
+          />
+        )}
+
+        {/* Render all routes with optimized rendering */}
+        {geoData.features.map((feature, index) => {
+          const coordinates = feature.geometry.coordinates as Coordinate[];
+          if (coordinates.length === 0) return null;
+
+          // Convert [lon, lat] to [lat, lon] for Leaflet
+          const positions = coordinates.map(coord => [coord[1], coord[0]] as [number, number]);
+          // Use bright green color for better visibility on light map
+          const color = '#22c55e'; // Bright green - highly visible
+          // Always use full opacity for better visibility
+          const opacity = 1;
+
+          return (
+            <Polyline
+              key={`route-${index}`}
+              positions={positions}
+              pathOptions={{
+                color: color,
+                weight: isBigMap ? 1 : 3, // Thicker lines for better visibility
+                opacity: opacity,
+                dashArray: dashArray,
+                lineJoin: 'round',
+                lineCap: 'round',
+              }}
+              eventHandlers={{
+                click: handleMapClick,
+              }}
+              // Use canvas renderer for better performance
+              pane="overlayPane"
+            />
+          );
+        })}
+
+        {/* Render animated route for single run */}
+        {isSingleRun && animatedPoints.length > 0 && (
+          <Polyline
+            positions={animatedPoints.map(coord => [coord[1], coord[0]] as [number, number])}
+            pathOptions={{
+              color: singleRunColor,
+              weight: 3,
+              opacity: 1,
             }}
           />
-        </Source>
-      )}
-      {isSingleRun && (
-        <RunMarker
-          startLat={startLat}
-          startLon={startLon}
-          endLat={endLat}
-          endLon={endLon}
-        />
-      )}
-      <span className={styles.runTitle}>{title}</span>
-      <FullscreenControl style={fullscreenButton} />
-      {!PRIVACY_MODE && <LightsControl setLights={setLights} lights={lights} />}
-      <NavigationControl
-        showCompass={false}
-        position={'bottom-right'}
-        style={{ opacity: 0.3 }}
-      />
-    </Map>
+        )}
+
+        {/* Render start/end markers for single run */}
+        {isSingleRun && (
+          <LeafletRunMarker
+            startLat={startLat}
+            startLon={startLon}
+            endLat={endLat}
+            endLon={endLon}
+          />
+        )}
+        </MapContainer>
+
+        <span className={styles.runTitle}>{title}</span>
+        {!PRIVACY_MODE && <LightsControl setLights={setLights} lights={lights} />}
+      </div>
+    </div>
   );
 };
 

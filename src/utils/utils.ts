@@ -1,6 +1,5 @@
-import * as mapboxPolyline from '@mapbox/polyline';
+import polyline from 'polyline-encoded';
 import gcoord from 'gcoord';
-import { WebMercatorViewport } from '@math.gl/web-mercator';
 import { RPGeometry } from '@/static/run_countries';
 import { chinaCities } from '@/static/city';
 import {
@@ -212,14 +211,14 @@ const pathForRun = (run: Activity): Coordinate[] => {
     if (!run.summary_polyline) {
       return [];
     }
-    const c = mapboxPolyline.decode(run.summary_polyline);
-    // reverse lat long for mapbox
-    c.forEach((arr) => {
-      [arr[0], arr[1]] = !NEED_FIX_MAP
-        ? [arr[1], arr[0]]
-        : gcoord.transform([arr[1], arr[0]], gcoord.GCJ02, gcoord.WGS84);
+    const decoded = polyline.decode(run.summary_polyline);
+    // Convert from [lat, lon] to [lon, lat] format
+    const c: Coordinate[] = decoded.map((point: number[]) => {
+      return !NEED_FIX_MAP
+        ? [point[1], point[0]]
+        : gcoord.transform([point[1], point[0]], gcoord.GCJ02, gcoord.WGS84);
     });
-    // try to use location city coordinate instead , if runpath is incomplete
+    // try to use location city coordinate instead, if runpath is incomplete
     if (c.length === 2 && String(c[0]) === String(c[1])) {
       const { coordinate } = locationForRun(run);
       if (coordinate?.[0] && coordinate?.[1]) {
@@ -382,18 +381,34 @@ const getBoundsForGeoData = (
   // Calculate corner values of bounds
   const pointsLong = points.map((point) => point[0]) as number[];
   const pointsLat = points.map((point) => point[1]) as number[];
-  const cornersLongLat: [Coordinate, Coordinate] = [
-    [Math.min(...pointsLong), Math.min(...pointsLat)],
-    [Math.max(...pointsLong), Math.max(...pointsLat)],
-  ];
-  const viewState = new WebMercatorViewport({
-    width: 800,
-    height: 600,
-  }).fitBounds(cornersLongLat, { padding: 200 });
-  let { longitude, latitude, zoom } = viewState;
+  
+  // Calculate center point
+  const minLng = Math.min(...pointsLong);
+  const maxLng = Math.max(...pointsLong);
+  const minLat = Math.min(...pointsLat);
+  const maxLat = Math.max(...pointsLat);
+  
+  const longitude = (minLng + maxLng) / 2;
+  const latitude = (minLat + maxLat) / 2;
+  
+  // Calculate appropriate zoom level based on bounds
+  const lngDiff = maxLng - minLng;
+  const latDiff = maxLat - minLat;
+  const maxDiff = Math.max(lngDiff, latDiff);
+  
+  // Rough zoom calculation for Leaflet
+  let zoom = 13;
+  if (maxDiff > 10) zoom = 5;
+  else if (maxDiff > 5) zoom = 7;
+  else if (maxDiff > 2) zoom = 9;
+  else if (maxDiff > 1) zoom = 10;
+  else if (maxDiff > 0.5) zoom = 11;
+  else if (maxDiff > 0.1) zoom = 12;
+  
   if (features.length > 1) {
     zoom = 11.5;
   }
+  
   return { longitude, latitude, zoom };
 };
 
@@ -434,15 +449,27 @@ const sortDateFunc = (a: Activity, b: Activity) => {
 };
 const sortDateFuncReverse = (a: Activity, b: Activity) => sortDateFunc(b, a);
 
+// Leaflet tile URL generation (simplified)
 const getMapStyle = (vendor: string, styleName: string, token: string) => {
-  const style = (MAP_TILE_STYLES as any)[vendor][styleName];
-  if (!style) {
-    return MAP_TILE_STYLES.default;
+  // For Leaflet, we'll use direct tile URLs instead of styles
+  // This function is kept for compatibility but returns tile URL patterns
+  const isDark = styleName.includes('dark');
+  
+  if (vendor === 'maptiler') {
+    const baseStyle = isDark ? 'streets-v2-dark' : 'streets-v2';
+    return `https://api.maptiler.com/maps/${baseStyle}/{z}/{x}/{y}.png?key=${token}`;
   }
-  if (vendor === 'maptiler' || vendor === 'stadiamaps') {
-    return style + token;
+  
+  if (vendor === 'stadiamaps') {
+    const baseStyle = isDark ? 'alidade_smooth_dark' : 'alidade_smooth';
+    return `https://tiles.stadiamaps.com/tiles/${baseStyle}/{z}/{x}/{y}{r}.png?api_key=${token}`;
   }
-  return style;
+  
+  // Default to CartoDB for 'mapbox' vendor (free alternative)
+  if (isDark) {
+    return 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  }
+  return 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
 };
 
 const isTouchDevice = () => {

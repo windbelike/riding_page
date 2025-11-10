@@ -1,9 +1,7 @@
 // Constants
-const MAPBOX_TOKEN =
-  // For security reasons, please avoid using the default public token provided by Mapbox as much as possible.
-  // Instead, manually add a new token and apply URL restrictions.
-  // (please refer to https://github.com/yihong0618/running_page/issues/643#issuecomment-2042668580)
-  'pk.eyJ1IjoieWlob25nMDYxOCIsImEiOiJjbWYxdXR4YncwMTJtMm5zOTE4eTZpMGdtIn0.OnsXdwkZFztR8a5Ph_T-xg';
+// Leaflet doesn't require a token for basic tile servers
+// For premium services like MapTiler or StadiaMaps, add your token here
+const MAP_API_TOKEN = '';
 const MUNICIPALITY_CITIES_ARR = [
   '北京市',
   '上海市',
@@ -42,9 +40,9 @@ const ROAD_LABEL_DISPLAY = true;
 // updated on 2024/11/17: privacy mode is set to true by default
 //set to `true` if you want to display only the routes without showing the map.
 const PRIVACY_MODE = false;
-// updated on 2024/11/17: lights are turned off by default
+// Map visibility: set to `true` for full map visibility (recommended with Leaflet)
 //set to `false` if you want to make light off as default, only effect when `PRIVACY_MODE` = false
-const LIGHTS_ON = false;
+const LIGHTS_ON = true;
 //set to `true` if you want to show the 'Elevation Gain' column
 const SHOW_ELEVATION_GAIN = false;
 // richer title for the activity types (like garmin style)
@@ -145,7 +143,7 @@ export {
   GOOGLE_ANALYTICS_TRACKING_ID,
   CHINESE_LOCATION_INFO_MESSAGE_FIRST,
   CHINESE_LOCATION_INFO_MESSAGE_SECOND,
-  MAPBOX_TOKEN,
+  MAP_API_TOKEN,
   MUNICIPALITY_CITIES_ARR,
   MAP_LAYER_LIST,
   IS_CHINESE,
@@ -224,62 +222,46 @@ export const HIKING_COLOR = 'rgb(151,51,255)';
 export const WALKING_COLOR = HIKING_COLOR;
 export const SWIMMING_COLOR = 'rgb(255,51,51)';
 
-// map tiles vendor, maptiler or mapbox or stadiamaps
-// if you want to use maptiler, set the access token in MAP_TILE_ACCESS_TOKEN
-export const MAP_TILE_VENDOR = 'mapbox';
+// map tiles vendor for Leaflet: 'cartodb' (free), 'maptiler', 'stadiamaps', or 'osm'
+// CartoDB provides beautiful, free tiles with good performance
+export const MAP_TILE_VENDOR = 'cartodb';
 
-// map tiles style name, see MAP_TILE_STYLES for more details
-export const MAP_TILE_STYLE_LIGHT = 'light-v10';
-export const MAP_TILE_STYLE_DARK = 'dark-v10';
+// map tiles style name for different themes
+export const MAP_TILE_STYLE_LIGHT = 'light';
+export const MAP_TILE_STYLE_DARK = 'dark';
 
-// access token. you can apply a new one, it's free.
-// maptiler: Gt5R0jT8tuIYxW6sNrAg | sign up at https://cloud.maptiler.com/auth/widget
-// stadiamaps: 8a769c5a-9125-4936-bdcf-a6b90cb5d0a4 | sign up at https://client.stadiamaps.com/signup/
-export const MAP_TILE_ACCESS_TOKEN = 'Gt5R0jT8tuIYxW6sNrAg';
+// access token for premium tile services (optional)
+// maptiler: Sign up at https://cloud.maptiler.com/auth/widget
+// stadiamaps: Sign up at https://client.stadiamaps.com/signup/
+export const MAP_TILE_ACCESS_TOKEN = '';
 
+// Leaflet tile layer URLs
 export const MAP_TILE_STYLES = {
+  // CartoDB - Free, beautiful tiles
+  cartodb: {
+    light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  },
+  
+  // OpenStreetMap - Free, standard tiles
+  osm: {
+    light: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    dark: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', // OSM doesn't have dark theme
+  },
+  
+  // MapTiler - Premium (requires API key)
   maptiler: {
-    'dataviz-light': 'https://api.maptiler.com/maps/dataviz/style.json?key=',
-    'dataviz-dark':
-      'https://api.maptiler.com/maps/dataviz-dark/style.json?key=',
-    'basic-light': 'https://api.maptiler.com/maps/basic-v2/style.json?key=',
-    'basic-dark': 'https://api.maptiler.com/maps/basic-v2-dark/style.json?key=',
-    'streets-light': 'https://api.maptiler.com/maps/streets-v2/style.json?key=',
-    'streets-dark':
-      'https://api.maptiler.com/maps/streets-v2-dark/style.json?key=',
-    'outdoor-light': 'https://api.maptiler.com/maps/outdoor-v2/style.json?key=',
-    'outdoor-dark':
-      'https://api.maptiler.com/maps/outdoor-v2-dark/style.json?key=',
-    'bright-light': 'https://api.maptiler.com/maps/bright-v2/style.json?key=',
-    'bright-dark':
-      'https://api.maptiler.com/maps/bright-v2-dark/style.json?key=',
-    'topo-light': 'https://api.maptiler.com/maps/topo-v2/style.json?key=',
-    'topo-dark': 'https://api.maptiler.com/maps/topo-v2-dark/style.json?key=',
-    'winter-light': 'https://api.maptiler.com/maps/winter-v2/style.json?key=',
-    'winter-dark':
-      'https://api.maptiler.com/maps/winter-v2-dark/style.json?key=',
-    hybrid: 'https://api.maptiler.com/maps/hybrid/style.json?key=',
+    'streets-light': 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=',
+    'streets-dark': 'https://api.maptiler.com/maps/streets-v2-dark/{z}/{x}/{y}.png?key=',
+    'outdoor-light': 'https://api.maptiler.com/maps/outdoor-v2/{z}/{x}/{y}.png?key=',
+    'outdoor-dark': 'https://api.maptiler.com/maps/outdoor-v2-dark/{z}/{x}/{y}.png?key=',
   },
 
-  // https://docs.stadiamaps.com/themes/
+  // StadiaMaps - Premium (requires API key)
   stadiamaps: {
-    // light
-    alidade_smooth:
-      'https://tiles.stadiamaps.com/styles/alidade_smooth.json?api_key=',
-    alidade_smooth_dark:
-      'https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json?api_key=',
-    alidade_satellite:
-      'https://tiles.stadiamaps.com/styles/alidade_satellite.json?api_key=',
+    alidade_smooth: 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png?api_key=',
+    alidade_smooth_dark: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png?api_key=',
   },
-
-  // https://docs.mapbox.com/api/maps/styles/
-  mapbox: {
-    'dark-v10': 'mapbox://styles/mapbox/dark-v10',
-    'dark-v11': 'mapbox://styles/mapbox/dark-v11',
-    'light-v10': 'mapbox://styles/mapbox/light-v10',
-    'light-v11': 'mapbox://styles/mapbox/light-v11',
-    'navigation-night': 'mapbox://styles/mapbox/navigation-night-v1',
-    'satellite-streets-v12': 'mapbox://styles/mapbox/satellite-streets-v12',
-  },
-  default: 'mapbox://styles/mapbox/dark-v10',
+  
+  default: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 };

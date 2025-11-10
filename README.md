@@ -1,6 +1,10 @@
-# cycling Page
+# Cycling Page
 
 > "This project is forked from [https://github.com/yihong0618/running_page/tree/master] under MIT license."
+
+## 🗺️ Map Update
+**Now using Leaflet instead of Mapbox!** Beautiful, free, open-source maps with better visuals.
+See [LEAFLET_MIGRATION.md](./LEAFLET_MIGRATION.md) for details.
 
 ## install and develop
 

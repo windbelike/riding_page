@@ -137,11 +137,15 @@ const Index = () => {
     (runsToAnimate: Activity[]) => {
       if (runsToAnimate.length === 0) {
         setAnimatedGeoData(geoData);
+        setIsAnimating(false);
         return;
       }
 
+      // Start animation with first slice
       const sliceNum =
         runsToAnimate.length >= 8 ? Math.ceil(runsToAnimate.length / 8) : 1;
+      const initialRuns = runsToAnimate.slice(0, sliceNum);
+      setAnimatedGeoData(geoJsonForRuns(initialRuns));
       setAnimationRuns(runsToAnimate);
       setCurrentAnimationIndex(sliceNum);
       setIsAnimating(true);
@@ -183,8 +187,9 @@ const Index = () => {
       }
 
       changeByItem(y, 'Year', filterYearRuns);
-      // Stop current animation
+      // Stop current animation and ensure animatedGeoData is updated
       setIsAnimating(false);
+      // Note: animatedGeoData will be updated by the useEffect that watches runs changes
     },
     [viewState.zoom, bounds, changeByItem]
   );
@@ -305,8 +310,15 @@ const Index = () => {
 
   // Animate geoData when runs change
   useEffect(() => {
-    startAnimation(runs);
-  }, [runs, startAnimation]);
+    // For Total or when filter changes, ensure we show all data immediately
+    if (year === 'Total' || runs.length > 100) {
+      // Too many runs, skip animation for better performance
+      setAnimatedGeoData(geoData);
+      setIsAnimating(false);
+    } else {
+      startAnimation(runs);
+    }
+  }, [runs, geoData, year, startAnimation]);
 
   useEffect(() => {
     if (year !== 'Total') {

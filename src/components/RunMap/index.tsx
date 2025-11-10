@@ -289,29 +289,34 @@ const RunMap = ({
   }, [viewState.zoom]);
 
   return (
-    <div style={style} id="map-container">
-      <MapContainer
-        center={initialCenter}
-        zoom={initialZoom}
-        style={{ width: '100%', height: '100%' }}
-        zoomControl={true}
-        scrollWheelZoom={true}
-        preferCanvas={true}
-        renderer={L.canvas()}
-        zoomAnimation={true}
-        fadeAnimation={true}
-        markerZoomAnimation={true}
-        ref={(mapInstance) => {
-          if (mapInstance) {
-            mapRef.current = mapInstance;
-          }
-        }}
-        whenReady={() => {
-          if (mapRef.current) {
-            // Map is ready
-          }
-        }}
-      >
+    <div style={{ width: '100%' }} id="map-container">
+      {/* Year tabs above the map */}
+      <RunMapButtons changeYear={changeYear} thisYear={thisYear} />
+      
+      {/* Map container */}
+      <div style={style}>
+        <MapContainer
+          center={initialCenter}
+          zoom={initialZoom}
+          style={{ width: '100%', height: '100%' }}
+          zoomControl={true}
+          scrollWheelZoom={true}
+          preferCanvas={true}
+          renderer={L.canvas()}
+          zoomAnimation={true}
+          fadeAnimation={true}
+          markerZoomAnimation={true}
+          ref={(mapInstance) => {
+            if (mapInstance) {
+              mapRef.current = mapInstance;
+            }
+          }}
+          whenReady={() => {
+            if (mapRef.current) {
+              // Map is ready
+            }
+          }}
+        >
         <MapViewController viewState={viewState} setViewState={setViewState} />
         
         <TileLayer
@@ -385,11 +390,11 @@ const RunMap = ({
             endLon={endLon}
           />
         )}
-      </MapContainer>
+        </MapContainer>
 
-      <RunMapButtons changeYear={changeYear} thisYear={thisYear} />
-      <span className={styles.runTitle}>{title}</span>
-      {!PRIVACY_MODE && <LightsControl setLights={setLights} lights={lights} />}
+        <span className={styles.runTitle}>{title}</span>
+        {!PRIVACY_MODE && <LightsControl setLights={setLights} lights={lights} />}
+      </div>
     </div>
   );
 };

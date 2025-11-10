@@ -345,8 +345,10 @@ const RunMap = ({
 
           // Convert [lon, lat] to [lat, lon] for Leaflet
           const positions = coordinates.map(coord => [coord[1], coord[0]] as [number, number]);
-          const color = feature.properties?.color || '#47b8e0';
-          const opacity = isSingleRun || isBigMap ? 1 : LINE_OPACITY;
+          // Use bright green color for better visibility on light map
+          const color = '#22c55e'; // Bright green - highly visible
+          // Always use full opacity for better visibility
+          const opacity = 1;
 
           return (
             <Polyline
@@ -354,7 +356,7 @@ const RunMap = ({
               positions={positions}
               pathOptions={{
                 color: color,
-                weight: isBigMap ? 1 : 2,
+                weight: isBigMap ? 1 : 3, // Thicker lines for better visibility
                 opacity: opacity,
                 dashArray: dashArray,
                 lineJoin: 'round',

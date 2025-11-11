@@ -26,11 +26,11 @@ const data: ISiteMetadataResult = {
     },
     {
       name: 'Blog',
-      url: '', // todo
+      url: 'https://windyplace.vercel.app/',
     },
     {
       name: 'About',
-      url: '', // todo
+      url: 'https://windyplace.vercel.app/',
     },
   ],
 };
